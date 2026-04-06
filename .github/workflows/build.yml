@@ -1,7 +1,7 @@
 name: Build Android
 
 on: 
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
     branches:
       - personal
@@ -10,15 +10,16 @@ jobs:
   build:
     name: Build APK
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup java
+      - name: Setup Java (Use 11 for Cordova)
         uses: actions/setup-java@v4
         with:
-          distribution: 'oracle' # See 'Supported distributions' for available options
-          java-version: '17' # only 11 works for this project 
+          distribution: 'temurin'
+          java-version: '11'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,80 +27,70 @@ jobs:
           node-version: 18
 
       - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26c
-          add-to-path: true
 
-      - name: Install Cordova
-        run: npm install -g cordova
+      - name: Install global tools
+        run: |
+          npm install -g cordova yarn
 
-      - name: Install yarn
-        run: npm install -g yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
 
-      - name: Install App Dependencies
-        run: yarn
-
-      - name: Setup App Dependencies
+      - name: Setup project
         run: yarn setup
 
-      - name: Configure Platform
+      - name: Clean project
         run: yarn clean
 
-      - name: Build Android apk
+      - name: Build Android APK
         run: yarn build android
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      # - name: Build Android prod aab
-      #   run: yarn build android
-      #   env:
-      #     ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-
-      # - name: Sign
-      #   run: |
-      #         sudo chmod 777 ./utils/scripts/sign.sh
-      #         ./utils/scripts/sign.sh
-
-      - name: Upload dev APK
-        uses: actions/upload-artifact@v3
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: acodenode-debug.zip
-          path: ./*.apk
-
-      # - name: Upload release bundle
-      #   uses: actions/upload-artifact@v3
-      #   with:
-      #     name: app-release
-      #     path: ./*.aab
+          name: android-apk
+          path: |
+            **/*.apk
 
   release:
     name: Upload Release Asset
     runs-on: ubuntu-latest
     needs: build
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Build project # This would actually build your project, using zip for an example artifact
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./apk
+
+      - name: Zip APK
         run: |
-          zip --junk-paths acodenode-debug README.md
+          cd apk
+          zip -r acodenode-debug.zip .
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: v1.0.${{ github.run_number }}
+          release_name: Release v1.0.${{ github.run_number }}
           draft: false
           prerelease: false
+
       - name: Upload Release Asset
-        id: upload-release-asset 
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./acodenode-debug.zip
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./apk/acodenode-debug.zip
           asset_name: acodenode-debug.zip
           asset_content_type: application/zip
