@@ -1,0 +1,101 @@
+name: Build Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - personal
+
+permissions:
+  contents: write   # ✅ required for release upload
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ✅ Java (Android build requires this)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ✅ Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'yarn'
+
+      # ✅ Android SDK (VERY IMPORTANT)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ✅ NDK (optional but safe)
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26c
+
+      # ✅ Install tools
+      - name: Install global tools
+        run: npm install -g cordova yarn
+
+      # ✅ Install dependencies
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # ⚠️ Make sure these scripts exist in package.json
+      - name: Setup project
+        run: yarn setup
+
+      - name: Clean project
+        run: yarn clean
+
+      # ✅ Build APK
+      - name: Build Android APK
+        run: yarn build android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      # ✅ Upload APK as artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: |
+            **/*.apk
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ./apk
+
+      - name: Zip APK
+        run: |
+          cd apk
+          zip -r app-release.zip .
+
+      # ✅ Create + upload release (modern way)
+      - name: Create Release & Upload
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          files: ./apk/app-release.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
