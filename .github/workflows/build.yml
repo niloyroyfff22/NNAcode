@@ -8,106 +8,51 @@ on:
 
 jobs:
   build:
-    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout source
-      - name: Checkout source
-        uses: actions/checkout@v4
+      # 1. Checkout
+      - uses: actions/checkout@v4
 
-      # 2. Setup Java (FIXED → 17)
+      # 2. Java 17 (IMPORTANT)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
-      # 3. Setup Node.js
-      - name: Setup Node.js
+      # 3. Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'yarn'
+          cache: yarn
 
-      # 4. Setup Android SDK
+      # 4. Android SDK (sdkmanager এখানে আসবে)
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
 
-      # 5. Install required SDK packages
+      # 5. Install SDK packages (Correct way)
       - name: Install SDK packages
         run: |
-          sdkmanager "platform-tools" \
-                     "platforms;android-33" \
-                     "build-tools;33.0.2"
+          sdkmanager --install "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
-      # 6. Setup Android NDK (optional but safe)
-      - name: Setup Android NDK
-        id: setup-ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26c
+      # 6. Global tools
+      - run: npm install -g cordova yarn
 
-      # 7. Install global tools
-      - name: Install global tools
-        run: npm install -g cordova yarn
+      # 7. Install deps
+      - run: yarn install --frozen-lockfile
 
-      # 8. Install dependencies
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      # 9. Project setup
-      - name: Setup project
-        run: yarn setup
-
-      # 10. Clean project
-      - name: Clean project
-        run: yarn clean
-
-      # 11. Build APK (FIXED)
-      - name: Build Android APK
+      # 8. Build
+      - name: Build APK
         run: |
           cordova platform add android || true
           cordova build android --debug
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
 
-      # 12. Upload APK
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      # 9. Upload
+      - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: |
-            **/outputs/apk/**/*.apk
-
-  release:
-    name: Upload Release
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      # 1. Download APK
-      - name: Download APK artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: android-apk
-          path: ./apk
-
-      # 2. Zip APK
-      - name: Zip APK
-        run: |
-          cd apk
-          zip -r app-debug.zip .
-
-      # 3. Create Release + Upload (FIXED modern action)
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Release v1.0.${{ github.run_number }}
-          files: ./apk/app-debug.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: apk
+          path: "**/*.apk"
