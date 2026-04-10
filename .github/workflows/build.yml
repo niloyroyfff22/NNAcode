@@ -12,50 +12,78 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout source
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup Java (Use 11 for Cordova)
+      # 2. Setup Java (Android build এর জন্য required)
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '11'
 
+      # 3. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'yarn'
 
+      # 4. Install Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 5. Install required SDK packages
+      - name: Install Android SDK Packages
+        run: |
+          sdkmanager "platform-tools" \
+                     "platforms;android-33" \
+                     "build-tools;33.0.2"
+
+      # 6. Accept licenses
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses
+
+      # 7. Setup Android NDK (optional but safer)
       - name: Setup Android NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26c
 
+      # 8. Install global tools
       - name: Install global tools
-        run: |
-          npm install -g cordova yarn
+        run: npm install -g cordova yarn
 
+      # 9. Install dependencies
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      # 10. Project setup
       - name: Setup project
         run: yarn setup
 
+      # 11. Clean project
       - name: Clean project
         run: yarn clean
 
+      # 12. Build APK
       - name: Build Android APK
-        run: yarn build android
+        run: |
+          cordova platform add android || true
+          cordova build android --debug
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
 
+      # 13. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: |
-            **/*.apk
+            **/outputs/apk/**/*.apk
 
   release:
     name: Upload Release Asset
@@ -63,34 +91,26 @@ jobs:
     needs: build
 
     steps:
+      # 1. Download APK
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
           name: android-apk
           path: ./apk
 
+      # 2. Zip APK
       - name: Zip APK
         run: |
           cd apk
           zip -r acodenode-debug.zip .
 
+      # 3. Create Release
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          release_name: Release v1.0.${{ github.run_number }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+          name: Release v1.0.${{ github.run_number }}
+          files: ./apk/acodenode-debug.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./apk/acodenode-debug.zip
-          asset_name: acodenode-debug.zip
-          asset_content_type: application/zip
